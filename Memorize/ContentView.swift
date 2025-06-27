@@ -9,12 +9,14 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var gameState: GameState = .start
+    @State private var currentLevel: Int = 1
     @State private var cards: [Card] = []
     @State private var flippedCards: [Int] = []
     @State private var matchedCards: Set<Int> = []
     @State private var canFlip = true
     
-    private let emojis = ["🐶", "🐱", "🐰", "🐼", "🐨", "🦊"]
+    private let level1Emojis = ["🐶", "🐱", "🐰"]
+    private let level2Emojis = ["🐶", "🐱", "🐰", "🐼"]
     
     var body: some View {
         ZStack {
@@ -31,27 +33,54 @@ struct ContentView: View {
                 StartView(onBegin: startGame)
             case .playing:
                 GameView(
+                    currentLevel: currentLevel,
                     cards: cards,
                     flippedCards: flippedCards,
                     matchedCards: matchedCards,
                     onCardTap: handleCardTap
                 )
+            case .levelComplete:
+                LevelCompleteView(
+                    currentLevel: currentLevel,
+                    onNextLevel: nextLevel,
+                    onRestart: restartToLevel1
+                )
             case .gameOver:
-                GameOverView(onPlayAgain: startGame)
+                GameOverView(onPlayAgain: restartToLevel1)
             }
         }
     }
     
     private func startGame() {
-        // Create 6 cards (3 pairs)
-        cards = (0..<6).map { index in
-            Card(id: index, emoji: emojis[index % 3], isMatched: false)
+        startLevel(1)
+    }
+    
+    private func startLevel(_ level: Int) {
+        currentLevel = level
+        let emojis = level == 1 ? level1Emojis : level2Emojis
+        let cardCount = level == 1 ? 6 : 8
+        
+        cards = (0..<cardCount).map { index in
+            Card(id: index, emoji: emojis[index % emojis.count], isMatched: false)
         }.shuffled()
         
         flippedCards = []
         matchedCards = []
         canFlip = true
         gameState = .playing
+    }
+    
+    private func nextLevel() {
+        if currentLevel < 2 {
+            startLevel(currentLevel + 1)
+        } else {
+            // All levels completed
+            gameState = .gameOver
+        }
+    }
+    
+    private func restartToLevel1() {
+        startLevel(1)
     }
     
     private func handleCardTap(_ cardIndex: Int) {
@@ -79,10 +108,11 @@ struct ContentView: View {
                 flippedCards = []
                 canFlip = true
                 
-                // Check if game is complete
-                if matchedCards.count == 6 {
+                // Check if level is complete
+                let requiredMatches = currentLevel == 1 ? 6 : 8
+                if matchedCards.count == requiredMatches {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        gameState = .gameOver
+                        gameState = .levelComplete
                     }
                 }
             } else {
@@ -104,7 +134,7 @@ struct Card: Identifiable {
 }
 
 enum GameState {
-    case start, playing, gameOver
+    case start, playing, levelComplete, gameOver
 }
 
 // MARK: - Start View
@@ -138,7 +168,11 @@ struct StartView: View {
                     }
                     HStack {
                         Text("•")
-                        Text("Match all 6 cards to win!")
+                        Text("Complete Level 1: 6 cards (3 pairs)")
+                    }
+                    HStack {
+                        Text("•")
+                        Text("Complete Level 2: 8 cards (4 pairs)")
                     }
                 }
                 .font(.body)
@@ -165,6 +199,7 @@ struct StartView: View {
 
 // MARK: - Game View
 struct GameView: View {
+    let currentLevel: Int
     let cards: [Card]
     let flippedCards: [Int]
     let matchedCards: Set<Int>
@@ -172,12 +207,26 @@ struct GameView: View {
     
     var body: some View {
         VStack {
-            Text("Memorize")
-                .font(.title)
-                .fontWeight(.bold)
-                .padding(.top)
+            HStack {
+                Text("Memorize")
+                    .font(.title)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Text("Level \(currentLevel)")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.blue)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.blue.opacity(0.2))
+                    .cornerRadius(15)
+            }
+            .padding(.top)
+            .padding(.horizontal)
             
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: currentLevel == 1 ? 3 : 4), spacing: 10) {
                 ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
                     CardView(
                         card: card,
@@ -229,21 +278,69 @@ struct CardView: View {
     }
 }
 
+// MARK: - Level Complete View
+struct LevelCompleteView: View {
+    let currentLevel: Int
+    let onNextLevel: () -> Void
+    let onRestart: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 30) {
+            Text("Level \(currentLevel) Complete!")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+                .foregroundColor(.primary)
+            
+            Text("Great job! You've matched all the cards in Level \(currentLevel)!")
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            
+            VStack(spacing: 15) {
+                if currentLevel < 2 {
+                    Button(action: onNextLevel) {
+                        Text("Next Level")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .frame(width: 200, height: 50)
+                            .background(Color.green)
+                            .cornerRadius(25)
+                            .shadow(radius: 3)
+                    }
+                }
+                
+                Button(action: onRestart) {
+                    Text("Restart Level 1")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .frame(width: 200, height: 50)
+                        .background(Color.orange)
+                        .cornerRadius(25)
+                        .shadow(radius: 3)
+                }
+            }
+        }
+        .padding()
+    }
+}
+
 // MARK: - Game Over View
 struct GameOverView: View {
     let onPlayAgain: () -> Void
     
     var body: some View {
         VStack(spacing: 30) {
-            Text("🎉")
+            Text("Congratulations!")
                 .font(.system(size: 80))
             
-            Text("Game Over!")
+            Text("Game Complete!")
                 .font(.largeTitle)
                 .fontWeight(.bold)
                 .foregroundColor(.primary)
             
-            Text("Congratulations! You've matched all the cards!")
+            Text("You've completed all levels! Well done!")
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
